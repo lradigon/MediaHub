@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/.vs/
+**/node_modules/
+build.log
+work/
+**/work/
+**/appsettings.Development.json
+**/appsettings.*.Local.json
+.env
+.git
+*.log

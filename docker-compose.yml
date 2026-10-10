@@ -1,0 +1,169 @@
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-backend-environment: &backend-environment
+  ConnectionStrings__Default: "Host=db;Port=5432;Database=mediahub;Username=mediahub;Password=${POSTGRES_PASSWORD:-mediahub}"
+  Tmdb__ApiKey: "${TMDB_API_KEY:-}"
+  Torznab__BaseUrl: "${C411_BASE_URL:-https://c411.org}"
+  Torznab__ApiKey: "${C411_API_KEY:-}"
+  Torznab__AccountApiToken: "${C411_ACCOUNT_API_TOKEN:-}"
+  QBittorrent__BaseUrl: "${QBITTORRENT_URL:-http://qbittorrent:8080}"
+  QBittorrent__Username: "${QBITTORRENT_USERNAME:-admin}"
+  QBittorrent__Password: "${QBITTORRENT_PASSWORD:-}"
+  QBittorrent__DownloadPath: /downloads
+  Library__StorageRoot: /library
+  Library__SentinelFile: "${LIBRARY_SENTINEL_FILE:-.mediahub-mounted}"
+  HandBrake__CliPath: HandBrakeCLI
+  HandBrake__PresetFilePath: /presets/handbrake.json
+  HandBrake__MoviePreset: Video
+  HandBrake__AnimePreset: Animation
+  HandBrake__WorkingDirectory: /work
+  Mega__MegaCmdDir: /usr/bin
+  Mega__RemoteRoot: "${MEGA_REMOTE_ROOT:-Films - Séries - Animés}"
+  Ffprobe__CliPath: ffprobe
+  Pipeline__HeartbeatPath: /state/worker-heartbeat
+
+services:
+  db:
+    <<: *service-defaults
+    image: postgres:17
+    environment:
+      POSTGRES_USER: mediahub
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-mediahub}"
+      POSTGRES_DB: mediahub
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediahub -d mediahub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    <<: *service-defaults
+    init: true
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *backend-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__ApplyMigrationsOnStartup: "true"
+    ports:
+      - "127.0.0.1:${API_PORT:-5080}:8080"
+    volumes:
+      - type: bind
+        source: "${LIBRARY_PATH:-./storage}"
+        target: /library
+        read_only: true
+        bind:
+          create_host_path: false
+      - "${DOWNLOADS_PATH:-./downloads}:/downloads:ro"
+      - ./presets:/presets:ro
+      - worker_state:/state:ro
+      - mega_api:/home/app/.megaCmd
+
+  web:
+    <<: *service-defaults
+    build:
+      context: ./frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8085}:8080"
+
+  qbittorrent:
+    <<: *service-defaults
+    profiles: [pipeline]
+    image: lscr.io/linuxserver/qbittorrent:latest
+    environment:
+      PUID: "1654"
+      PGID: "1654"
+      TZ: "${TZ:-Europe/Paris}"
+      WEBUI_PORT: "8080"
+    ports:
+      - "127.0.0.1:${QBITTORRENT_PORT:-8080}:8080"
+      - "${TORRENT_PORT:-6881}:6881"
+      - "${TORRENT_PORT:-6881}:6881/udp"
+    volumes:
+      - qbit_config:/config
+      - "${DOWNLOADS_PATH:-./downloads}:/downloads"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/ > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  worker:
+    <<: *service-defaults
+    profiles: [pipeline]
+    init: true
+    stop_grace_period: 60s
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: worker
+    depends_on:
+      api:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_healthy
+    environment:
+      <<: *backend-environment
+      DOTNET_ENVIRONMENT: Production
+      Pipeline__MaxConcurrentJobs: "${MAX_CONCURRENT_JOBS:-3}"
+    volumes:
+      - type: bind
+        source: "${LIBRARY_PATH:-./storage}"
+        target: /library
+        read_only: true
+        bind:
+          create_host_path: false
+      - "${DOWNLOADS_PATH:-./downloads}:/downloads"
+      - ./presets:/presets:ro
+      - encoding_work:/work
+      - worker_state:/state
+      - mega_worker:/home/app/.megaCmd
+
+  caddy:
+    <<: *service-defaults
+    profiles: [public]
+    image: caddy:2-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      MEDIAHUB_DOMAIN: "${MEDIAHUB_DOMAIN:-localhost}"
+      MEDIAHUB_AUTH_USER: "${MEDIAHUB_AUTH_USER:-admin}"
+      MEDIAHUB_AUTH_PASSWORD_HASH: "${MEDIAHUB_AUTH_PASSWORD_HASH:-}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  qbit_config:
+  encoding_work:
+  worker_state:
+  mega_api:
+  mega_worker:
+  caddy_data:
+  caddy_config:
