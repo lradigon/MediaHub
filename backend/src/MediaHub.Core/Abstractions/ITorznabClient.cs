@@ -10,6 +10,10 @@ public record C411AccountStats(string Username, long UploadedBytes, long Downloa
 /// </summary>
 public interface ITorznabClient
 {
+    Task<IReadOnlyList<ReleaseCandidate>> SearchForWatchAsync(MediaHub.Core.Entities.MediaItem media, CancellationToken ct = default, Func<string, Task>? progress = null) =>
+        SearchAsync(SearchQuery.ForMedia(media.Title, media.Year, media.Type),
+            SearchQuery.CategoriesForMedia(media.Type), media.Type != MediaType.Movie, forceRefresh: true, tmdbId: media.TmdbId, ct: ct);
+
     Task CheckConnectionAsync(CancellationToken ct = default);
     /// <param name="query">Terme de recherche (titre, éventuellement + saison/épisode).</param>
     /// <param name="categories">Catégories Torznab (ex: 2000 films, 5000 séries).</param>

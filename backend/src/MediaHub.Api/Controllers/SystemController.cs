@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using MediaHub.Core.Abstractions;
+using MediaHub.Infrastructure.Clients;
 using MediaHub.Infrastructure.Data;
 using MediaHub.Infrastructure.Options;
 using MediaHub.Infrastructure.Services;
@@ -20,7 +21,9 @@ public class SystemController(
     IOptions<TmdbOptions> tmdbOptions,
     IOptions<TorznabOptions> torznabOptions,
     IOptions<LibraryOptions> libraryOptions,
-    IConfiguration configuration) : ControllerBase
+    IConfiguration configuration,
+    TelegramClient telegram,
+    IOptions<TelegramOptions> telegramOptions) : ControllerBase
 {
     [HttpGet("status")]
     public async Task<IReadOnlyList<ServiceStatusDto>> Status(CancellationToken ct)
@@ -33,6 +36,7 @@ public class SystemController(
             }, true, ct),
             ProbeAsync("TMDB", tmdb.CheckConnectionAsync, !string.IsNullOrWhiteSpace(tmdbOptions.Value.ApiKey), ct),
             ProbeAsync("C411", torznab.CheckConnectionAsync, !string.IsNullOrWhiteSpace(torznabOptions.Value.ApiKey), ct),
+            ProbeAsync("Telegram", telegram.CheckConnectionAsync, telegramOptions.Value.Configured, ct),
             ProbeAsync("qBittorrent", download.CheckConnectionAsync, true, ct),
             ProbeAsync("Stockage", token =>
             {

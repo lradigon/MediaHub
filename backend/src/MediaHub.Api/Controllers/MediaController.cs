@@ -16,7 +16,7 @@ namespace MediaHub.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class MediaController(AppDbContext db, LibraryService library, ITmdbClient tmdb, ITorznabClient torznab, EpisodeSyncService episodes, StorageMediaInspector storageInspector, ICloudStorage cloud, IOptions<LibraryOptions> libraryOptions) : ControllerBase
+public class MediaController(AppDbContext db, LibraryService library, ITmdbClient tmdb, ITorznabClient torznab, EpisodeSyncService episodes, StorageMediaInspector storageInspector, ICloudStorage cloud, IOptions<LibraryOptions> libraryOptions, ReleaseWatchService watch) : ControllerBase
 {
     /// <summary>Liste de la bibliothèque.</summary>
     [HttpGet]
@@ -33,6 +33,10 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
             .ToListAsync(ct);
         var cloudPathsByMediaId = cloudFiles.ToLookup(file => file.MediaItemId!.Value, file => file.Path);
         var pipelineStages = await ActivePipelineStagesAsync(ct);
+        var watchEnabled = await db.WatchSettings.AnyAsync(settings => settings.Enabled, ct);
+        var watchedIds = watchEnabled
+            ? (await ReleaseWatchService.WatchedMedia(db).Select(media => media.Id).ToListAsync(ct)).ToHashSet()
+            : new HashSet<Guid>();
         var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
 
         return mediaItems.Select(media =>
@@ -53,7 +57,7 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
                 media.Id, media.TmdbId, media.Type, media.Title, media.Year, media.ReleaseDate?.ToString("yyyy-MM-dd"), media.PosterPath, media.BackdropPath,
                 EffectiveStatus(media, pipelineStage, inStock), inStock, pipelineStage,
                 latestAiredDate?.ToString("yyyy-MM-dd"), missingAiredEpisodeCount,
-                StorageName(media.StoragePath) ?? CloudStorageName(cloudPaths));
+                StorageName(media.StoragePath) ?? CloudStorageName(cloudPaths), watchedIds.Contains(media.Id));
         }).ToList();
     }
 
@@ -81,7 +85,7 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
         var pipelineStage = inStock ? null : await ActivePipelineStageAsync(id, ct);
         return new MediaDetailDto(m.Id, m.TmdbId, m.Type, m.Title, m.OriginalTitle,
             m.Overview, m.Year, m.PosterPath, EffectiveStatus(m, pipelineStage, inStock), inStock, pipelineStage,
-            StorageName(m.StoragePath) ?? CloudStorageName(cloudPaths), seasons);
+            StorageName(m.StoragePath) ?? CloudStorageName(cloudPaths), seasons, await watch.StatusAsync(id, ct));
     }
 
     /// <summary>Liste les traitements récents associés à un média.</summary>
@@ -298,14 +302,20 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
 
     /// <summary>Liste les torrents proposés pour ce média, évalués contre le profil par défaut.</summary>
     [HttpGet("{id:guid}/releases")]
-    public async Task<ActionResult<ReleaseSearchResponseDto>> Releases(
-        Guid id, [FromQuery] bool forceRefresh, [FromQuery] string? coverage, CancellationToken ct)
+    public Task<ActionResult<ReleaseSearchResponseDto>> Releases(Guid id, [FromQuery] string? coverage, CancellationToken ct) =>
+        LoadReleasesAsync(id, false, coverage, ct);
+
+    [HttpPost("{id:guid}/releases/search")]
+    public Task<ActionResult<ReleaseSearchResponseDto>> SearchReleases(Guid id, [FromQuery] string? coverage, CancellationToken ct) =>
+        LoadReleasesAsync(id, true, coverage, ct);
+
+    private async Task<ActionResult<ReleaseSearchResponseDto>> LoadReleasesAsync(
+        Guid id, bool forceRefresh, string? coverage, CancellationToken ct)
     {
         var m = await db.MediaItems.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (m is null) return NotFound();
 
-        var profile = await db.ReleaseProfiles.FirstOrDefaultAsync(p => p.IsDefault, ct)
-            ?? new ReleaseProfile();
+        var profile = await watch.ProfileAsync(m, ct);
 
         var query = SearchQuery.ForMedia(m.Title, m.Year, m.Type);
         if (m.Type != MediaType.Movie && TryParseEpisodeCoverage(coverage, out var coverageSeason, out var coverageEpisode))
@@ -320,14 +330,19 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
         IReadOnlyList<ReleaseCandidate> releases;
         try
         {
-            releases = await torznab.SearchAsync(
+            releases = forceRefresh ? await torznab.SearchAsync(
                 query,
                 categories: SearchQuery.CategoriesForMedia(m.Type),
                 tvSearch: m.Type != MediaType.Movie,
                 forceRefresh: forceRefresh,
                 tmdbId: m.TmdbId,
                 seasonNumber: latestSeasonNumber,
-                ct: ct);
+                ct: ct) : await watch.SavedReleasesAsync(m, ct);
+            if (forceRefresh && string.IsNullOrWhiteSpace(coverage))
+            {
+                await watch.SaveReleasesAsync(id, releases, ct);
+                m.ReleasesCheckedAt = DateTimeOffset.UtcNow;
+            }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
@@ -356,7 +371,7 @@ public class MediaController(AppDbContext db, LibraryService library, ITmdbClien
                 e.Release.Grabs, e.Release.IsFreeleech))
             .ToList();
 
-            return new ReleaseSearchResponseDto(query, evaluatedReleases);
+            return new ReleaseSearchResponseDto(query, evaluatedReleases, m.ReleasesCheckedAt);
     }
 
     [HttpGet("{id:guid}/episode-numbering")]

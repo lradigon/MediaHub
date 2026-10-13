@@ -1,6 +1,18 @@
-@MediaHub.Api_HostAddress = http://localhost:5218
+@MediaHub.Api_HostAddress = http://127.0.0.1:15080
+@MediaId = 491cc995-5661-48c3-827f-7fe1b41e57e8
 
-GET {{MediaHub.Api_HostAddress}}/weatherforecast/
+GET {{MediaHub.Api_HostAddress}}/api/media/{{MediaId}}/stock-details
 Accept: application/json
+
+###
+
+POST {{MediaHub.Api_HostAddress}}/api/media/{{MediaId}}/stock-details
+Content-Type: application/json
+
+{"maxFiles":1}
+
+###
+
+POST {{MediaHub.Api_HostAddress}}/api/media/{{MediaId}}/stock-details/cancel
 
 ###

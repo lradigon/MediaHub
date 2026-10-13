@@ -25,6 +25,12 @@ public static class DependencyInjection
         services.Configure<HandBrakeOptions>(config.GetSection(HandBrakeOptions.Section));
         services.Configure<FfprobeOptions>(config.GetSection(FfprobeOptions.Section));
         services.Configure<LibraryOptions>(config.GetSection(LibraryOptions.Section));
+        services.Configure<TelegramOptions>(config.GetSection("Telegram"));
+        services.AddHttpClient<TelegramClient>(http =>
+        {
+            http.BaseAddress = new Uri("https://api.telegram.org/");
+            http.Timeout = TimeSpan.FromSeconds(35);
+        }).RemoveAllLoggers();
 
         // Base de données
         var connectionString = config.GetConnectionString("Default")
@@ -45,7 +51,7 @@ public static class DependencyInjection
         {
             var opt = GetSection<TorznabOptions>(config, TorznabOptions.Section);
             http.BaseAddress = new Uri(opt.BaseUrl);
-        });
+        }).RemoveAllLoggers();
 
         // qBittorrent (cookie de session partagé)
         services.AddHttpClient<IDownloadClient, QBittorrentClient>((sp, http) =>
@@ -67,7 +73,12 @@ public static class DependencyInjection
         services.AddScoped<Services.LibraryService>();
         services.AddScoped<Services.StorageScanService>();
         services.AddScoped<Services.StorageMediaInspector>();
+        services.AddScoped<Services.StockInspectionService>();
+        services.AddScoped<Services.TrackSelectionService>();
+        services.AddScoped<Services.TelegramTrackSelectionService>();
         services.AddScoped<Services.EpisodeSyncService>();
+        services.AddScoped<Services.ReleaseWatchService>();
+        services.AddScoped<Services.WatchScanService>();
 
         return services;
     }

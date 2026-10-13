@@ -4,7 +4,8 @@ COPY . .
 RUN dotnet restore src/MediaHub.Api/MediaHub.Api.csproj \
     && dotnet restore src/MediaHub.Worker/MediaHub.Worker.csproj
 RUN dotnet publish src/MediaHub.Api/MediaHub.Api.csproj -c Release -o /out/api --no-restore \
-    && dotnet publish src/MediaHub.Worker/MediaHub.Worker.csproj -c Release -o /out/worker --no-restore
+    && dotnet publish src/MediaHub.Worker/MediaHub.Worker.csproj -c Release -o /out/worker --no-restore \
+    && chmod -R a+rX /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS tools
 ARG TARGETARCH
@@ -21,6 +22,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /tmp/megacmd.deb \
     && mkdir -p /app /work /state /home/app/.megaCmd \
     && chown -R app:app /app /work /state /home/app
+RUN chmod 755 /home/app
 ENV HOME=/home/app
 WORKDIR /app
 USER app

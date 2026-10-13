@@ -105,7 +105,7 @@ vit dans `MediaHub.Core/Releases/ReleaseParser.cs`.
 Squelette fonctionnel. À durcir avant prod :
 
 - **Auth** (rôles Admin/Ami) — indispensable avant d'exposer aux amis.
-- **Watchers de nouvelles releases et approbations mobiles** : voir la feuille de route. Le suivi de fin de téléchargement et le nommage TMDB sont déjà implémentés.
+- **Veille et approbations Telegram** : implémentées, configuration dans [WATCHERS.md](docs/WATCHERS.md). La fréquence et les décisions sont accessibles dans la page Veille. Les alertes d'incidents restent dans la feuille de route.
 - **Scan Plex ciblé** dans l'étape `Notify`.
 - **Inventaire cloud** (`CloudFile`) : job de synchronisation périodique via `mega-find`.
 - Parsing des releases à enrichir selon les conventions réelles de C411.

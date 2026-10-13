@@ -1,3 +1,79 @@
+export interface MediaWatchStatus {
+  enabled: boolean;
+  globalEnabled: boolean;
+  state: "active" | "excluded" | "disabled" | "initializing" | "error";
+  intervalMinutes: number;
+  lastCheckedAt: string | null;
+  nextCheckAt: string | null;
+  lastError: string | null;
+}
+
+export interface WatchStatus {
+  enabled: boolean;
+  intervalMinutes: number;
+  maxParallelSearches: number;
+  telegramConfigured: boolean;
+  totalMedia: number;
+  initializedMedia: number;
+  lastCheckedAt: string | null;
+  errors: number;
+  pending: number;
+}
+
+export interface WatchScanPage {
+  scan: {
+    id: string;
+    state: string;
+    manual: boolean;
+    createdAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    retryAt: string | null;
+    detail: string | null;
+    elapsedSeconds: number;
+    minimumRemainingSeconds: number;
+    requestSpacingSeconds: number;
+    maxParallelSearches: number;
+    globalEnabled: boolean;
+    workerOnline: boolean;
+    workerLastSeen: string | null;
+    summary: { total: number; completed: number; failed: number; skipped: number; cancelled: number; queued: number; active: number; newProposals: number; lastActivityAt: string };
+  } | null;
+  items?: {
+    id: string;
+    mediaItemId: string;
+    title: string;
+    state: string;
+    detail: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    updatedAt: string;
+    observations: number;
+    found: number;
+    filtered: number;
+    newProposals: number;
+  }[];
+  filteredTotal?: number;
+  activeItems?: NonNullable<WatchScanPage["items"]>;
+}
+
+export interface WatchProposalPage {
+  total: number;
+  items: {
+    id: string;
+    mediaItemId: string;
+    mediaTitle: string;
+    title: string;
+    sizeBytes: number;
+    coverage: string;
+    decision: string;
+    firstSeenAt: string;
+    expiresAt: string;
+    notifiedAt: string | null;
+    jobId: string | null;
+  }[];
+}
+
 export type MediaType = "Movie" | "Series" | "Anime";
 export type MediaStatus = "Wanted" | "Processing" | "Available" | "Ignored";
 export type RequestStatus = "Pending" | "Approved" | "Rejected";
@@ -23,6 +99,7 @@ export interface TmdbSearchItem {
 }
 
 export interface MediaSummary {
+  watchActive: boolean;
   id: string;
   tmdbId?: number | null;
   type: MediaType;
@@ -75,6 +152,7 @@ export interface ReleaseDto {
 export interface ReleaseSearchResponse {
   query: string;
   releases: ReleaseDto[];
+  checkedAt: string | null;
 }
 
 export interface JobDto {
@@ -173,6 +251,7 @@ export interface MediaDetail {
   pipelineStage?: JobKind | null;
   storageName?: string | null;
   seasons: SeasonDetail[];
+  watch?: MediaWatchStatus | null;
 }
 
 export interface EpisodeNumberingRule {
@@ -208,6 +287,58 @@ export interface StockMediaFile {
   audioTracks: StockAudioTrack[];
   subtitleTracks: StockSubtitleTrack[];
   isCloud: boolean;
+}
+
+export interface StockTechnicalDetails extends Omit<StockMediaFile, "name" | "isCloud" | "audioTracks"> {
+  path: string;
+  container?: string | null;
+  overallBitRate?: number | null;
+  videoProfile?: string | null;
+  pixelFormat?: string | null;
+  frameRate?: string | null;
+  displayAspectRatio?: string | null;
+  colorPrimaries?: string | null;
+  colorTransfer?: string | null;
+  colorSpace?: string | null;
+  hdr?: string | null;
+  externalSubtitles: string[];
+  audioTracks: (StockAudioTrack & {
+    index: number; name?: string | null; bitRate?: number | null; channelCount?: number | null;
+    profile?: string | null; isDefault: boolean; isForced: boolean; isCommentary: boolean; isAudioDescription: boolean;
+  })[];
+}
+
+export interface StockFileInspection {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  inspectedAt?: string | null;
+  status: string;
+  isPresent: boolean;
+  error?: string | null;
+  details?: StockTechnicalDetails | null;
+}
+
+export interface StockInspectionProgress {
+  status: string;
+  requestedAt: string;
+  finishedAt?: string | null;
+  totalFiles: number;
+  processedFiles: number;
+  inspectedFiles: number;
+  failedFiles: number;
+  currentFile?: string | null;
+  error?: string | null;
+}
+
+export interface StockDetails {
+  mediaId: string;
+  title: string;
+  posterPath?: string | null;
+  hasStorage: boolean;
+  inspection?: StockInspectionProgress | null;
+  files: StockFileInspection[];
 }
 
 export interface ReleaseProfile {

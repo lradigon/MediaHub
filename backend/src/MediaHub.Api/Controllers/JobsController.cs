@@ -11,7 +11,7 @@ namespace MediaHub.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class JobsController(AppDbContext db, StorageMediaInspector storageInspector) : ControllerBase
+public class JobsController(AppDbContext db, TrackSelectionService selections) : ControllerBase
 {
     /// <summary>Jobs de pipeline récents (file de traitement).</summary>
     [HttpGet]
@@ -132,8 +132,10 @@ public class JobsController(AppDbContext db, StorageMediaInspector storageInspec
 
         try
         {
-            var (payload, file) = await InspectTracksAsync(job, ct);
-            var recommendation = TrackSelectionPolicy.Recommend(file, job.MediaItem?.OriginalLanguage);
+            var details = await selections.GetAsync(id, ct);
+            if (details is null) return Conflict("Ce job n'est plus en attente d'une sélection de pistes.");
+            var file = details.File;
+            var recommendation = details.Recommendation;
             return new TrackSelectionDto(
                 job.Id, job.MediaItem?.Title, job.MediaItem?.OriginalLanguage, job.Error,
                 file.AudioTracks.Select(track => new JobAudioTrackDto(
@@ -159,14 +161,8 @@ public class JobsController(AppDbContext db, StorageMediaInspector storageInspec
 
         try
         {
-            var (payload, file) = await InspectTracksAsync(job, ct);
-            var audioIndexes = body.AudioTrackIndexes.Distinct().ToList();
-            var subtitleIndexes = body.SubtitleTrackIndexes.Distinct().ToList();
-
-            var validationError = ValidateTrackSelection(file, audioIndexes, subtitleIndexes);
-            if (validationError is not null) return BadRequest(validationError);
-            CompleteTrackSelection(job, payload, audioIndexes, subtitleIndexes);
-            await db.SaveChangesAsync(ct);
+            var result = await selections.ConfirmAsync(id, body.AudioTrackIndexes, body.SubtitleTrackIndexes, false, ct);
+            if (result.Error is not null) return BadRequest(result.Error);
             return Accepted();
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException)
@@ -186,103 +182,15 @@ public class JobsController(AppDbContext db, StorageMediaInspector storageInspec
 
         try
         {
-            var (sourcePayload, sourceFile) = await InspectTracksAsync(sourceJob, ct);
-            var audioIndexes = body.AudioTrackIndexes.Distinct().ToList();
-            var subtitleIndexes = body.SubtitleTrackIndexes.Distinct().ToList();
-            var validationError = ValidateTrackSelection(sourceFile, audioIndexes, subtitleIndexes);
-            if (validationError is not null) return BadRequest(validationError);
-
-            var matchingLayout = TrackLayoutSignature(sourceFile);
-            var candidates = await db.PipelineJobs
-                .Where(job => job.Kind == JobKind.TrackSelection &&
-                    job.Status == JobStatus.WaitingForSelection &&
-                    job.MediaItemId == sourceJob.MediaItemId)
-                .ToListAsync(ct);
-            var appliedCount = 0;
-
-            foreach (var candidate in candidates)
-            {
-                try
-                {
-                    var (payload, file) = candidate.Id == sourceJob.Id
-                        ? (sourcePayload, sourceFile)
-                        : await InspectTracksAsync(candidate, ct);
-                    if (!string.Equals(TrackLayoutSignature(file), matchingLayout, StringComparison.Ordinal))
-                        continue;
-
-                    CompleteTrackSelection(candidate, payload, audioIndexes, subtitleIndexes);
-                    appliedCount++;
-                }
-                catch (Exception ex) when (ex is IOException or InvalidOperationException)
-                {
-                    // Un fichier inaccessible ne doit pas bloquer les autres épisodes compatibles.
-                }
-            }
-
-            await db.SaveChangesAsync(ct);
-            return Ok(new GroupTrackSelectionResultDto(appliedCount));
+            var result = await selections.ConfirmAsync(id, body.AudioTrackIndexes, body.SubtitleTrackIndexes, true, ct);
+            if (result.Error is not null) return BadRequest(result.Error);
+            return Ok(new GroupTrackSelectionResultDto(result.AppliedCount));
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException)
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
         }
     }
-
-    private static string? ValidateTrackSelection(
-        StockMediaFile file, IReadOnlyList<int> audioIndexes, IReadOnlyList<int> subtitleIndexes)
-    {
-        if (audioIndexes.Count == 0)
-            return "Sélectionne au moins une piste audio.";
-        if (audioIndexes.Any(index => file.AudioTracks.All(track => track.Index != index)) ||
-            subtitleIndexes.Any(index => file.SubtitleTracks.All(track => track.Index != index)))
-            return "La sélection contient une piste absente du fichier téléchargé.";
-        if (file.AudioTracks.Any(track => track.IsAudioDescription && audioIndexes.Contains(track.Index)))
-            return "Les pistes d'audiodescription ne peuvent pas être retenues.";
-        if (file.SubtitleTracks.Any(track => TrackSelectionPolicy.IsSdh(track) && subtitleIndexes.Contains(track.Index)))
-            return "Les sous-titres SDH ne peuvent pas être retenus.";
-        return null;
-    }
-
-    private void CompleteTrackSelection(
-        PipelineJob job, ReleasePayload payload, IReadOnlyList<int> audioIndexes, IReadOnlyList<int> subtitleIndexes)
-    {
-        db.PipelineJobs.Add(new PipelineJob
-        {
-            Kind = JobKind.Encode,
-            MediaItemId = job.MediaItemId,
-            EpisodeId = job.EpisodeId,
-            PayloadJson = JsonSerializer.Serialize(payload with
-            {
-                AudioTrackIndexes = audioIndexes,
-                SubtitleTrackIndexes = subtitleIndexes
-            })
-        });
-        job.Status = JobStatus.Completed;
-        job.Progress = 100;
-        job.Error = null;
-        job.FinishedAt = DateTimeOffset.UtcNow;
-    }
-
-    private static string TrackLayoutSignature(StockMediaFile file) =>
-        JsonSerializer.Serialize(new { file.AudioTracks, file.SubtitleTracks });
-
-    private async Task<(ReleasePayload Payload, StockMediaFile File)> InspectTracksAsync(PipelineJob job, CancellationToken ct)
-    {
-        var payload = ReadPayload(job);
-        if (string.IsNullOrWhiteSpace(payload.ContentPath))
-            throw new InvalidOperationException("Le chemin du téléchargement n'est pas disponible.");
-        var file = (await storageInspector.InspectAsync(payload.ContentPath, ct))
-            .OrderByDescending(item => item.SizeBytes)
-            .FirstOrDefault()
-            ?? throw new FileNotFoundException("Aucun fichier vidéo n'a été trouvé dans le téléchargement.", payload.ContentPath);
-        return (payload with { ContentPath = file.Path }, file);
-    }
-
-        private static ReleasePayload ReadPayload(PipelineJob job) =>
-        job.PayloadJson is null
-                        ? new ReleasePayload(null, null, null, null, null)
-                        : JsonSerializer.Deserialize<ReleasePayload>(job.PayloadJson)
-                            ?? new ReleasePayload(null, null, null, null, null);
 
     private static string? FindCloudPath(PipelineJob job, IReadOnlyList<CloudFile> cloudFiles) =>
         job.Kind == JobKind.Upload && job.Status == JobStatus.Completed

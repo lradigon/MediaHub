@@ -22,6 +22,9 @@ public class MediaItem
     public string? BackdropPath { get; set; }
 
     public MediaStatus Status { get; set; } = MediaStatus.Wanted;
+    public bool WatchEnabled { get; set; } = true;
+    public string? ReleaseSnapshotJson { get; set; }
+    public DateTimeOffset? ReleasesCheckedAt { get; set; }
 
     /// <summary>Chemin du dossier de ce média sur le stockage local/monté (rempli au scan).</summary>
     public string? StoragePath { get; set; }

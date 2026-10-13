@@ -21,7 +21,7 @@ Ces points ne sont pas présentés comme corrigés par cette livraison. Les perm
 - Conservation des téléchargements jusqu'à l'upload persisté, et nettoyage limité au dossier de téléchargement configuré.
 - Arrêt et observation des tâches du worker ; jobs interrompus reprogrammés plutôt que marqués en échec par simple arrêt.
 - Arrêt des processus CLI MEGA lorsqu'une commande est annulée.
-- Validation du contenu `Ok.` de la réponse qBittorrent, pas seulement du HTTP 200.
+- Validation du contenu `Ok.` pour le login qBittorrent HTTP 200 ; pour HTTP 204, vérification de la session via un endpoint protégé avant acceptation.
 - Contrat de payload partagé : les règles de numérotation ne disparaissent plus lors d'une sélection des pistes.
 - Politique de sélection des pistes mutualisée entre API et worker.
 - Regex de langue inutilisée remplacée par une détection précise du marqueur MULTi.
@@ -42,7 +42,7 @@ Les scripts Python et les presets originaux du workspace parent ne sont pas supp
 Les tests automatisés couvrent login qBittorrent, sérialisation du payload, MULTi, sentinelle de montage et politique des pistes.
 Validation effectuée sur Windows et le moteur Docker Linux local :
 
-- 9 tests de régression réussis ; backend et frontend compilés.
+- 12 tests de régression réussis, dont succès et refus du login qBittorrent HTTP 204 ; backend et frontend compilés.
 - Aucun avis de vulnérabilité détecté par npm audit ni par l'audit NuGet direct/transitif à la date de livraison.
 - Images Linux amd64 construites ; cinq services sains dans une stack isolée sur base neuve, migrations et proxy API fonctionnels.
 - HandBrake Linux importe les presets Video et Animation.

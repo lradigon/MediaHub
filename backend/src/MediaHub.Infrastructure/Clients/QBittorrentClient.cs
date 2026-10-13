@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using MediaHub.Core.Abstractions;
@@ -32,7 +33,12 @@ public class QBittorrentClient(HttpClient http, IOptions<QBittorrentOptions> opt
         });
         using var resp = await http.PostAsync("/api/v2/auth/login", form, ct);
         resp.EnsureSuccessStatusCode();
-        if (!string.Equals((await resp.Content.ReadAsStringAsync(ct)).Trim(), "Ok.", StringComparison.Ordinal))
+        if (resp.StatusCode == HttpStatusCode.NoContent)
+        {
+            using var verification = await http.GetAsync("/api/v2/app/version", ct);
+            verification.EnsureSuccessStatusCode();
+        }
+        else if (!string.Equals((await resp.Content.ReadAsStringAsync(ct)).Trim(), "Ok.", StringComparison.Ordinal))
             throw new UnauthorizedAccessException("Identifiants qBittorrent invalides.");
         _authenticated = true;
     }

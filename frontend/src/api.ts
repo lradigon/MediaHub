@@ -36,6 +36,21 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  setMediaWatch: (id: string, enabled: boolean) => http<import("./types").MediaWatchStatus>(`/api/watch/media/${id}`, {
+    method: "PUT", body: JSON.stringify({ enabled }),
+  }),
+  getWatchStatus: (signal?: AbortSignal) => http<import("./types").WatchStatus>("/api/watch", { signal }),
+  startWatchScan: () => http<{ id: string; state: string }>("/api/watch/scans", { method: "POST" }),
+  cancelWatchScan: (id: string) => http<void>(`/api/watch/scans/${id}/cancel`, { method: "POST" }),
+  getWatchScan: (page: number, filter: string, signal?: AbortSignal) =>
+    http<import("./types").WatchScanPage>(`/api/watch/scans/current?page=${page}&filter=${encodeURIComponent(filter)}`, { signal }),
+  configureWatch: (settings: { enabled: boolean; intervalMinutes: number; maxParallelSearches: number }) =>
+    http<void>("/api/watch", { method: "PUT", body: JSON.stringify(settings) }),
+  getWatchProposals: (decision: string, page: number, signal?: AbortSignal) =>
+    http<import("./types").WatchProposalPage>(`/api/watch/proposals?decision=${encodeURIComponent(decision)}&page=${page}`, { signal }),
+  decideWatch: (id: string, accept: boolean) =>
+    http<{ message: string }>(`/api/watch/proposals/${id}/decision`, { method: "POST", body: JSON.stringify({ accept }) }),
+  testWatchTelegram: () => http<void>("/api/watch/telegram/test", { method: "POST" }),
   getSystemStatus: () => http<ServiceStatus[]>("/api/system/status"),
   searchTmdb: (query: string) =>
     http<TmdbSearchItem[]>(`/api/search?query=${encodeURIComponent(query)}`),
@@ -53,6 +68,11 @@ export const api = {
 
   getMediaStock: (id: string) => http<StockMediaFile[]>(`/api/media/${id}/stock`),
 
+  getStockDetails: (id: string, signal?: AbortSignal) => http<import("./types").StockDetails>(`/api/media/${id}/stock-details`, { signal }),
+  inspectStock: (id: string, options: { maxFiles?: number; force?: boolean; fileId?: string } = {}) =>
+    http<import("./types").StockInspectionProgress>(`/api/media/${id}/stock-details`, { method: "POST", body: JSON.stringify(options) }),
+  cancelStockInspection: (id: string) => http<void>(`/api/media/${id}/stock-details/cancel`, { method: "POST" }),
+
   updateMediaAssociation: (id: string, tmdbId: number, type: MediaType) =>
     http<MediaDetail>(`/api/media/${id}/association`, {
       method: "PUT",
@@ -67,10 +87,10 @@ export const api = {
 
   getMediaReleases: (id: string, forceRefresh = false, coverage?: string | null) => {
     const parameters = new URLSearchParams();
-    if (forceRefresh) parameters.set("forceRefresh", "true");
     if (coverage) parameters.set("coverage", coverage);
     const query = parameters.toString();
-    return http<ReleaseSearchResponse>(`/api/media/${id}/releases${query ? `?${query}` : ""}`);
+    return http<ReleaseSearchResponse>(`/api/media/${id}/releases${forceRefresh ? "/search" : ""}${query ? `?${query}` : ""}`,
+      forceRefresh ? { method: "POST" } : undefined);
   },
 
   getEpisodeNumberingRules: (id: string) =>

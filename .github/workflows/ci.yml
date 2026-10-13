@@ -10,6 +10,22 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: mediahub
+          POSTGRES_PASSWORD: mediahub
+          POSTGRES_DB: mediahub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mediahub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MEDIAHUB_TEST_DB: Host=localhost;Port=5432;Database=mediahub;Username=mediahub;Password=mediahub
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

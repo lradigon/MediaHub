@@ -17,10 +17,32 @@ namespace MediaHub.Infrastructure.Clients;
 /// </summary>
 public class TorznabClient(HttpClient http, IOptions<TorznabOptions> options, IMemoryCache cache) : ITorznabClient
 {
+    public const int RequestSpacingSeconds = 5;
     private readonly TorznabOptions _opt = options.Value;
     private static readonly XNamespace TorznabNs = "http://torznab.com/schemas/2015/feed";
     private static readonly SemaphoreSlim RequestGate = new(1, 1);
     private static DateTimeOffset _lastRequestAt = DateTimeOffset.MinValue;
+
+    public async Task<IReadOnlyList<ReleaseCandidate>> SearchForWatchAsync(MediaHub.Core.Entities.MediaItem media, CancellationToken ct = default, Func<string, Task>? progress = null)
+    {
+        if (media.TmdbId is > 0)
+            return await FetchTmdbItemsAsync(media.TmdbId.Value, media.Type == MediaHub.Core.MediaType.Movie ? "movie" : "tv", ct, progress);
+        return await FetchItemsAsync(SearchQuery.ForMedia(media.Title, media.Year, media.Type),
+            media.Type == MediaHub.Core.MediaType.Movie ? "search" : "tvsearch",
+            $"&cat={string.Join(",", SearchQuery.CategoriesForMedia(media.Type))}", null, null, ct, progress);
+    }
+
+    private static async Task WaitForRequestSlotAsync(CancellationToken ct)
+    {
+        await RequestGate.WaitAsync(ct);
+        try
+        {
+            var delay = _lastRequestAt.AddSeconds(RequestSpacingSeconds) - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
+            _lastRequestAt = DateTimeOffset.UtcNow;
+        }
+        finally { RequestGate.Release(); }
+    }
 
     public async Task CheckConnectionAsync(CancellationToken ct = default)
     {
@@ -41,13 +63,6 @@ public class TorznabClient(HttpClient http, IOptions<TorznabOptions> options, IM
         var cacheKey = $"torznab:{searchType}:{query}:{cat}:tmdb:{tmdbId}:season:{seasonNumber}";
         if (!forceRefresh && cache.TryGetValue<IReadOnlyList<ReleaseCandidate>>(cacheKey, out var cached) && cached is not null)
             return cached;
-
-        await RequestGate.WaitAsync(ct);
-        try
-        {
-            // Une seconde requête identique a pu remplir le cache pendant l'attente.
-            if (!forceRefresh && cache.TryGetValue<IReadOnlyList<ReleaseCandidate>>(cacheKey, out cached) && cached is not null)
-                return cached;
 
             var items = await FetchItemsAsync(query, searchType, cat, null, null, ct);
             if (tmdbId is > 0 && !isEpisodeSearch)
@@ -95,21 +110,14 @@ public class TorznabClient(HttpClient http, IOptions<TorznabOptions> options, IM
 
             cache.Set(cacheKey, (IReadOnlyList<ReleaseCandidate>)items, TimeSpan.FromMinutes(2));
             return items;
-        }
-        finally
-        {
-            RequestGate.Release();
-        }
     }
 
     private async Task<List<ReleaseCandidate>> FetchItemsAsync(
-        string? query, string searchType, string categories, int? seasonNumber, int? tmdbId, CancellationToken ct)
+        string? query, string searchType, string categories, int? seasonNumber, int? tmdbId, CancellationToken ct, Func<string, Task>? progress = null)
     {
-        var delay = _lastRequestAt.AddSeconds(2) - DateTimeOffset.UtcNow;
-        if (delay > TimeSpan.Zero)
-            await Task.Delay(delay, ct);
-
-        _lastRequestAt = DateTimeOffset.UtcNow;
+        if (progress is not null) await progress("rate-limit");
+        await WaitForRequestSlotAsync(ct);
+        if (progress is not null) await progress("request");
         var queryParameter = string.IsNullOrWhiteSpace(query) ? string.Empty : $"&q={Uri.EscapeDataString(query)}";
         var seasonParameter = seasonNumber is > 0 ? $"&season={seasonNumber}" : string.Empty;
         var tmdbParameter = tmdbId is > 0 ? $"&tmdbid={tmdbId}" : string.Empty;
@@ -141,13 +149,11 @@ public class TorznabClient(HttpClient http, IOptions<TorznabOptions> options, IM
         return items;
     }
 
-    private async Task<List<ReleaseCandidate>> FetchTmdbItemsAsync(int tmdbId, string tmdbType, CancellationToken ct)
+    private async Task<List<ReleaseCandidate>> FetchTmdbItemsAsync(int tmdbId, string tmdbType, CancellationToken ct, Func<string, Task>? progress = null)
     {
-        var delay = _lastRequestAt.AddSeconds(2) - DateTimeOffset.UtcNow;
-        if (delay > TimeSpan.Zero)
-            await Task.Delay(delay, ct);
-
-        _lastRequestAt = DateTimeOffset.UtcNow;
+        if (progress is not null) await progress("rate-limit");
+        await WaitForRequestSlotAsync(ct);
+        if (progress is not null) await progress("request");
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/api/torrents/by-tmdb?tmdbId={tmdbId}&tmdbType={tmdbType}");

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Bell, BellOff, HardDrive, Search, Trash2 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, TMDB_IMAGE } from "../api";
-import type { EpisodeNumberingRule, JobDto, MediaDetail as MediaDetailType, MediaStatus, ReleaseDto, StockMediaFile, TmdbSearchItem } from "../types";
+import type { EpisodeNumberingRule, JobDto, MediaDetail as MediaDetailType, MediaStatus, ReleaseDto, TmdbSearchItem } from "../types";
 
 function formatSize(bytes: number): string {
   if (!bytes) return "—";
@@ -37,25 +37,6 @@ function formatDate(iso?: string | null): string {
     month: "short",
     year: "numeric",
   });
-}
-
-function formatDuration(duration?: string | null): string {
-  if (!duration) return "—";
-  const [hours, minutes, seconds] = duration.split(":");
-  return `${Number(hours)} h ${minutes} min ${seconds.slice(0, 2)} s`;
-}
-
-function formatResolution(width?: number | null, height?: number | null): string {
-  if (!width || !height) return "—";
-  const label = width >= 3800 ? "2160p" : width >= 1900 ? "1080p" : width >= 1260 ? "720p" : height >= 550 ? "576p" : height >= 450 ? "480p" : null;
-  return label ? `${label} (${width}×${height})` : `${width}×${height}`;
-}
-
-function formatBitRate(bitRate?: number | null): string {
-  if (!bitRate) return "—";
-  return bitRate >= 1_000_000
-    ? `${(bitRate / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} Mb/s`
-    : `${Math.round(bitRate / 1_000)} kb/s`;
 }
 
 const PIPELINE_STAGE_LABELS: Record<NonNullable<MediaDetailType["pipelineStage"]>, string> = {
@@ -95,17 +76,6 @@ const JOB_STATUS_LABELS: Record<JobDto["status"], string> = {
   WaitingForSelection: "Choix requis",
 };
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  deu: "Allemand",
-  eng: "Anglais",
-  fra: "Français",
-  fre: "Français",
-  ita: "Italien",
-  jpn: "Japonais",
-  kor: "Coréen",
-  spa: "Espagnol",
-};
-
 type ReleaseSortKey =
   | "title"
   | "coverage"
@@ -137,43 +107,6 @@ const RELEASE_SORT_COLUMNS: { key: ReleaseSortKey; label: string }[] = [
   { key: "accepted", label: "Verdict" },
 ];
 
-function formatLanguage(language?: string | null): string {
-  return language ? LANGUAGE_LABELS[language.toLowerCase()] ?? language.toUpperCase() : "Inconnue";
-}
-
-function AudioTrackList({ tracks }: { tracks: StockMediaFile["audioTracks"] }) {
-  const visibleTracks = tracks.filter((track) => track.language || track.codec || track.channels || track.sampleRate);
-  if (visibleTracks.length === 0) return "—";
-
-  return (
-    <div className="media-track-list">
-      {visibleTracks.map((track, index) => (
-        <div key={index} className="media-track">
-          <span className="track-language">{formatLanguage(track.language)}</span>
-          <span>{[track.codec, track.channels, track.sampleRate ? `${track.sampleRate / 1000} kHz` : null].filter(Boolean).join(" · ")}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SubtitleTrackList({ tracks }: { tracks: StockMediaFile["subtitleTracks"] }) {
-  if (tracks.length === 0) return "—";
-
-  return (
-    <div className="media-track-list">
-      {tracks.map((track, index) => (
-        <div key={index} className="media-track">
-          <span className="track-language">{formatLanguage(track.language)}</span>
-          <span>{[track.format, track.source].filter(Boolean).join(" · ")}</span>
-          {track.isForced && <span className="track-flag">Forcé</span>}
-          {track.isDefault && <span className="track-flag">Défaut</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function MediaDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -181,13 +114,11 @@ export default function MediaDetail() {
   const [mediaJobs, setMediaJobs] = useState<JobDto[]>([]);
   const [releases, setReleases] = useState<ReleaseDto[]>([]);
   const [releaseQuery, setReleaseQuery] = useState<string | null>(null);
+  const [releasesCheckedAt, setReleasesCheckedAt] = useState<string | null>(null);
+  const [searchingReleases, setSearchingReleases] = useState(false);
   const [releaseSortKey, setReleaseSortKey] = useState<ReleaseSortKey>("publishDate");
   const [releaseSortDirection, setReleaseSortDirection] = useState<SortDirection>("desc");
   const [selectedEpisodeCoverage, setSelectedEpisodeCoverage] = useState<string | null>(null);
-  const [stockFiles, setStockFiles] = useState<StockMediaFile[]>([]);
-  const [stockError, setStockError] = useState<string | null>(null);
-  const [loadingStock, setLoadingStock] = useState(false);
-  const [hasLoadedStock, setHasLoadedStock] = useState(false);
   const [loadingReleases, setLoadingReleases] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -195,6 +126,8 @@ export default function MediaDetail() {
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updatingWatch, setUpdatingWatch] = useState(false);
+  const [watchError, setWatchError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [editingAssociation, setEditingAssociation] = useState(false);
@@ -205,6 +138,7 @@ export default function MediaDetail() {
   const [numberingRules, setNumberingRules] = useState<EpisodeNumberingRule[]>([]);
   const [savingNumberingRules, setSavingNumberingRules] = useState(false);
   const requestedReleasesForId = useRef<string | null>(null);
+  const releaseRequestSequence = useRef(0);
   const requestedEpisodeSyncForId = useRef<string | null>(null);
 
   function loadMedia(mediaId: string) {
@@ -215,30 +149,35 @@ export default function MediaDetail() {
     return api.getMediaJobs(mediaId).then(setMediaJobs).catch((e) => setError((e as Error).message));
   }
 
-  async function loadStock(mediaId: string) {
-    setLoadingStock(true);
-    setStockError(null);
+  async function toggleWatch(enabled: boolean) {
+    if (!id) return;
+    setUpdatingWatch(true);
+    setWatchError(null);
     try {
-      setStockFiles(await api.getMediaStock(mediaId));
-      await loadMedia(mediaId);
-    } catch (e) {
-      setStockError((e as Error).message);
-    } finally {
-      setLoadingStock(false);
-      setHasLoadedStock(true);
-    }
+      const watch = await api.setMediaWatch(id, enabled);
+      setMedia(current => current?.id === id ? { ...current, watch } : current);
+    } catch (error) { setWatchError((error as Error).message); }
+    finally { setUpdatingWatch(false); }
   }
 
   async function loadReleases(mediaId: string, forceRefresh = false, coverage?: string | null) {
+    const sequence = ++releaseRequestSequence.current;
     setLoadingReleases(true);
+    setSearchingReleases(forceRefresh);
     try {
       const response = await api.getMediaReleases(mediaId, forceRefresh, coverage);
+      if (sequence !== releaseRequestSequence.current) return;
       setReleases(response.releases);
       setReleaseQuery(response.query);
+      setReleasesCheckedAt(response.checkedAt);
     } catch (e) {
+      if (sequence !== releaseRequestSequence.current) return;
       setError((e as Error).message);
     } finally {
-      setLoadingReleases(false);
+      if (sequence === releaseRequestSequence.current) {
+        setLoadingReleases(false);
+        setSearchingReleases(false);
+      }
     }
   }
 
@@ -247,14 +186,12 @@ export default function MediaDetail() {
     loadMedia(id);
     loadMediaJobs(id);
     api.getEpisodeNumberingRules(id).then(setNumberingRules).catch((e) => setError((e as Error).message));
-    setStockFiles([]);
     setReleaseQuery(null);
     setSelectedEpisodeCoverage(null);
-    setStockError(null);
-    setLoadingStock(false);
-    setHasLoadedStock(false);
     if (requestedReleasesForId.current === id) return;
     requestedReleasesForId.current = id;
+    setReleases([]);
+    setReleasesCheckedAt(null);
     void loadReleases(id);
   }, [id]);
 
@@ -514,6 +451,28 @@ export default function MediaDetail() {
             {media.title} {media.year ? <span className="muted">({media.year})</span> : null}
           </h2>
           <p className={`media-state status-${media.inStock ? "available" : "wanted"}`}>{media.inStock ? "Dans le stock" : "Wishlist"}</p>
+          <div className="media-watch-status" data-state={media.watch?.state ?? "unavailable"}>
+            <div className="media-watch-heading">
+            <Link to="/watch" className={`media-watch-label status-${media.watch?.state === "active" ? "available" : media.watch?.state === "error" ? "failed" : "wanted"}`}>
+              {media.watch?.state === "excluded" || media.watch?.state === "disabled" ? <BellOff size={16} aria-hidden="true" /> : <Bell size={16} aria-hidden="true" />}
+              {media.watch?.state === "active" ? "Veille active" : media.watch?.state === "excluded" ? "Veille exclue : film déjà en stock" :
+                media.watch?.state === "disabled" ? (media.watch.enabled ? "Veille globale en pause" : "Veille désactivée pour ce média") : media.watch?.state === "initializing" ? "Veille active : référence initiale en attente" :
+                media.watch?.state === "error" ? "Veille : erreur de recherche" : "Veille : statut indisponible"}
+            </Link>
+            {media.watch && media.watch.state !== "excluded" && <label className="media-watch-toggle" title="Activer ou désactiver la veille de ce média">
+              <input type="checkbox" role="switch" aria-label="Veille de ce média" checked={media.watch.enabled}
+                disabled={updatingWatch} onChange={event => toggleWatch(event.target.checked)} />
+              <span className="media-watch-switch" aria-hidden="true" />
+            </label>}
+            </div>
+            {media.watch && media.watch.state !== "excluded" && <dl className="media-watch-dates">
+              <div><dt>Fréquence</dt><dd>{media.watch.intervalMinutes} min</dd></div>
+              <div><dt>Dernier contrôle</dt><dd>{media.watch.lastCheckedAt ? new Date(media.watch.lastCheckedAt).toLocaleString("fr-FR") : "En attente"}</dd></div>
+              <div><dt>Prochain contrôle prévu</dt><dd>{media.watch.nextCheckAt ? new Date(media.watch.nextCheckAt).toLocaleString("fr-FR") : "En pause"}</dd></div>
+            </dl>}
+            {media.watch?.state === "error" && media.watch.lastError && <p className="error">{media.watch.lastError}</p>}
+            {watchError && <p className="error" role="alert">{watchError}</p>}
+          </div>
           {media.pipelineStage && displayedJobs.length === 0 && <p className="media-state status-processing">{stateLabel(media)}</p>}
           {!media.pipelineStage && !media.inStock && (
             <label className="media-status-control">
@@ -706,7 +665,6 @@ export default function MediaDetail() {
                             onClick={() => {
                               const nextCoverage = selectedEpisodeCoverage === coverage ? null : coverage;
                               setSelectedEpisodeCoverage(nextCoverage);
-                              if (id) void loadReleases(id, true, nextCoverage);
                             }}
                           >
                             {e.episodeNumber}
@@ -730,68 +688,26 @@ export default function MediaDetail() {
       )}
 
       <div className="section-head">
-        <h3>Stock proposé</h3>
-        <button className="small-btn" onClick={() => id && loadStock(id)} disabled={loadingStock}>
-          {loadingStock ? "Analyse…" : "Analyser le stock"}
-        </button>
+        <h3>Stock</h3>
+        <Link className="media-stock-link" to={`/media/${id}/stock`}><HardDrive size={16} />Détails du stock</Link>
       </div>
-      {loadingStock ? (
-        <p>Analyse du stock…</p>
-      ) : stockError ? (
-        <p className="muted">Stock indisponible : {stockError}</p>
-      ) : !hasLoadedStock ? (
-        <p className="muted">Métadonnées techniques non analysées.</p>
-      ) : stockFiles.length === 0 ? (
-        <p className="muted">Aucun fichier de stock associé à ce média.</p>
-      ) : (
-        <table className="table stock-files">
-          <thead>
-            <tr>
-              <th>Fichier</th>
-              <th>Durée</th>
-              <th>Rés.</th>
-              <th>Vidéo</th>
-              <th>Débit</th>
-              <th>Audio</th>
-              <th>Sous-titres</th>
-              <th>Taille</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stockFiles.map((file) => (
-              <tr key={file.name}>
-                <td className="release-name" title={file.name}>
-                  {file.name}
-                  {file.isCloud && <span className="muted">MEGA · Métadonnées disponibles avec une copie locale</span>}
-                </td>
-                <td className="nowrap">{formatDuration(file.duration)}</td>
-                <td>{formatResolution(file.width, file.height)}</td>
-                <td>{file.videoCodec ? `${file.videoCodec}${file.bitDepth ? ` ${file.bitDepth}-bit` : ""}` : "—"}</td>
-                <td className="nowrap">{formatBitRate(file.videoBitRate)}</td>
-                <td><AudioTrackList tracks={file.audioTracks} /></td>
-                <td><SubtitleTrackList tracks={file.subtitleTracks} /></td>
-                <td>{formatSize(file.sizeBytes)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
 
       <div className="section-head">
         <div>
           <h3>Torrents proposés</h3>
-          {releaseQuery && <p className="muted">Recherche C411 : <code>{releaseQuery}</code></p>}
+          {releasesCheckedAt && <p className="muted">Dernière vérification : {new Date(releasesCheckedAt).toLocaleString("fr-FR")}</p>}
+          {releaseQuery && <p className="muted">C411 : <code>{releaseQuery}</code></p>}
           {selectedEpisodeCoverage && <p className="muted">Épisode sélectionné : <code>{selectedEpisodeCoverage}</code></p>}
         </div>
         <button className="small-btn" type="button" onClick={() => id && loadReleases(id, true)} disabled={loadingReleases}>
-          <RefreshCw size={15} aria-hidden="true" />
-          {loadingReleases ? "Actualisation…" : "Actualiser les torrents"}
+          <Search size={15} aria-hidden="true" />
+          {searchingReleases ? "Recherche…" : "Rechercher sur C411"}
         </button>
       </div>
       {loadingReleases ? (
-        <p>Recherche des sources…</p>
+        <p>{searchingReleases ? "Recherche sur C411…" : "Chargement des torrents enregistrés…"}</p>
       ) : releases.length === 0 ? (
-        <p className="muted">Aucun torrent trouvé.</p>
+        <p className="muted">{releasesCheckedAt ? "Aucun torrent trouvé lors de la dernière vérification." : "Aucun torrent enregistré."}</p>
       ) : (
         <table className="table releases">
           <thead>

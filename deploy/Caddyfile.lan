@@ -1,0 +1,21 @@
+{
+    default_sni {$MEDIAHUB_LAN_ADDRESS}
+}
+
+{$MEDIAHUB_LAN_ORIGIN} {
+    tls internal
+    basic_auth {
+        {$MEDIAHUB_AUTH_USER} {$MEDIAHUB_AUTH_PASSWORD_HASH}
+    }
+    @unsafe_cross_origin {
+        method POST PUT PATCH DELETE
+        not header Origin {$MEDIAHUB_LAN_ORIGIN}
+    }
+    respond @unsafe_cross_origin "Origin not allowed." 403
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+    }
+    reverse_proxy mediahub-web-1:8080
+}

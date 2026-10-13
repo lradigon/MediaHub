@@ -6,7 +6,15 @@ using Microsoft.Extensions.Options;
 
 namespace MediaHub.Infrastructure.Services;
 
-public record StockAudioTrack(int Index, string? Language, string? Codec, string? Channels, int? SampleRate, string? Name, bool IsAudioDescription);
+public record StockAudioTrack(int Index, string? Language, string? Codec, string? Channels, int? SampleRate, string? Name, bool IsAudioDescription)
+{
+    public long? BitRate { get; init; }
+    public int? ChannelCount { get; init; }
+    public string? Profile { get; init; }
+    public bool IsDefault { get; init; }
+    public bool IsForced { get; init; }
+    public bool IsCommentary { get; init; }
+}
 
 public record StockSubtitleTrack(int Index, string? Language, string? Format, string? Source, bool IsDefault, bool IsForced);
 
@@ -20,7 +28,20 @@ public record StockMediaFile(
     int? BitDepth,
     long? VideoBitRate,
     IReadOnlyList<StockAudioTrack> AudioTracks,
-    IReadOnlyList<StockSubtitleTrack> SubtitleTracks);
+    IReadOnlyList<StockSubtitleTrack> SubtitleTracks)
+{
+    public string? Container { get; init; }
+    public long? OverallBitRate { get; init; }
+    public string? VideoProfile { get; init; }
+    public string? PixelFormat { get; init; }
+    public string? FrameRate { get; init; }
+    public string? DisplayAspectRatio { get; init; }
+    public string? ColorPrimaries { get; init; }
+    public string? ColorTransfer { get; init; }
+    public string? ColorSpace { get; init; }
+    public string? Hdr { get; init; }
+    public IReadOnlyList<string> ExternalSubtitles { get; init; } = [];
+}
 
 public partial class StorageMediaInspector(IOptions<FfprobeOptions> options)
 {
@@ -117,6 +138,10 @@ public partial class StorageMediaInspector(IOptions<FfprobeOptions> options)
         };
         startInfo.ArgumentList.Add("-v");
         startInfo.ArgumentList.Add("error");
+        startInfo.ArgumentList.Add("-probesize");
+        startInfo.ArgumentList.Add("5000000");
+        startInfo.ArgumentList.Add("-analyzeduration");
+        startInfo.ArgumentList.Add("5000000");
         startInfo.ArgumentList.Add("-show_format");
         startInfo.ArgumentList.Add("-show_streams");
         startInfo.ArgumentList.Add("-of");
@@ -144,11 +169,16 @@ public partial class StorageMediaInspector(IOptions<FfprobeOptions> options)
             throw new InvalidOperationException($"ffprobe n'a pas pu analyser « {Path.GetFileName(path)} » : {error}");
 
         using var document = JsonDocument.Parse(output);
-        var streams = document.RootElement.TryGetProperty("streams", out var streamList)
+        return ParseProbe(path, new FileInfo(path).Length, document.RootElement);
+    }
+
+    public static StockMediaFile ParseProbe(string path, long sizeBytes, JsonElement root)
+    {
+        var streams = root.TryGetProperty("streams", out var streamList)
             ? streamList.EnumerateArray().ToList()
             : [];
-        var video = streams.FirstOrDefault(stream => GetString(stream, "codec_type") == "video");
-        var format = GetObject(document.RootElement, "format");
+        var video = streams.FirstOrDefault(stream => GetString(stream, "codec_type") == "video" && !GetBool(GetObject(stream, "disposition"), "attached_pic"));
+        var format = GetObject(root, "format");
         var audioTracks = streams.Where(stream => GetString(stream, "codec_type") == "audio")
             .Select((audio, index) =>
             {
@@ -158,10 +188,18 @@ public partial class StorageMediaInspector(IOptions<FfprobeOptions> options)
                     index + 1,
                     GetString(tags, "language"),
                     GetString(audio, "codec_name"),
-                    GetString(audio, "channel_layout") ?? GetString(audio, "channels"),
+                    GetString(audio, "channel_layout") ?? GetInt(audio, "channels")?.ToString(),
                     GetInt(audio, "sample_rate"),
                     name,
-                    IsAudioDescription(name));
+                    IsAudioDescription(name))
+                {
+                    BitRate = GetLong(audio, "bit_rate") ?? GetLong(tags, "BPS") ?? GetLong(tags, "BPS-eng"),
+                    ChannelCount = GetInt(audio, "channels"),
+                    Profile = GetString(audio, "profile"),
+                    IsDefault = GetBool(GetObject(audio, "disposition"), "default"),
+                    IsForced = GetBool(GetObject(audio, "disposition"), "forced"),
+                    IsCommentary = GetBool(GetObject(audio, "disposition"), "comment")
+                };
             }).ToList();
         var subtitleTracks = streams.Where(stream => GetString(stream, "codec_type") == "subtitle")
             .Select((subtitle, index) =>
@@ -181,15 +219,35 @@ public partial class StorageMediaInspector(IOptions<FfprobeOptions> options)
 
         return new StockMediaFile(
             path,
-            new FileInfo(path).Length,
-            GetDuration(document.RootElement),
+            sizeBytes,
+            GetDuration(root),
             GetInt(video, "width"),
             GetInt(video, "height"),
             GetString(video, "codec_name"),
-            GetBitDepth(GetString(video, "pix_fmt") ?? GetString(video, "profile") ?? string.Empty),
-            GetLong(video, "bit_rate") ?? GetLong(format, "bit_rate"),
+            GetBitDepth(GetString(video, "pix_fmt") ?? GetString(video, "profile") ?? string.Empty)
+                ?? (GetString(video, "pix_fmt") is { } pixel && pixel.Contains("420p") ? 8 : null),
+            GetLong(video, "bit_rate") ?? GetLong(GetObject(video, "tags"), "BPS") ?? GetLong(GetObject(video, "tags"), "BPS-eng"),
             audioTracks,
-            subtitleTracks);
+            subtitleTracks)
+        {
+            Container = GetString(format, "format_name"),
+            OverallBitRate = GetLong(format, "bit_rate"),
+            VideoProfile = GetString(video, "profile"),
+            PixelFormat = GetString(video, "pix_fmt"),
+            FrameRate = GetString(video, "avg_frame_rate"),
+            DisplayAspectRatio = GetString(video, "display_aspect_ratio"),
+            ColorPrimaries = GetString(video, "color_primaries"),
+            ColorTransfer = GetString(video, "color_transfer"),
+            ColorSpace = GetString(video, "color_space"),
+            Hdr = GetHdr(video)
+        };
+    }
+
+    private static string? GetHdr(JsonElement video)
+    {
+        if (video.ValueKind == JsonValueKind.Object && video.TryGetProperty("side_data_list", out var sideData) && sideData.ValueKind == JsonValueKind.Array &&
+            sideData.EnumerateArray().Any(value => GetString(value, "side_data_type")?.Contains("DOVI", StringComparison.OrdinalIgnoreCase) == true)) return "Dolby Vision";
+        return GetString(video, "color_transfer") switch { "smpte2084" => "PQ / HDR", "arib-std-b67" => "HLG", _ => null };
     }
 
     private static JsonElement GetObject(JsonElement element, string name) =>

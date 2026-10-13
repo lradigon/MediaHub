@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Search } from "lucide-react";
+import { ArrowUp, Bell, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, TMDB_IMAGE } from "../api";
 import type { MediaSummary, MediaType } from "../types";
@@ -195,7 +195,12 @@ export default function Library() {
               <div className="poster-placeholder" />
             )}
             <div className="card-body">
-              <strong>{m.title}</strong>
+              <div className="library-card-title">
+                <strong>{m.title}</strong>
+                {m.watchActive && <span className="library-watch-icon" role="img" aria-label="Veille active" title="Veille active">
+                  <Bell size={14} aria-hidden="true" />
+                </span>}
+              </div>
               <div className="card-meta">
                 <span
                   className={`badge media-type media-type-${m.type.toLowerCase()}`}

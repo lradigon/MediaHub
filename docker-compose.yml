@@ -27,6 +27,8 @@ x-backend-environment: &backend-environment
   Mega__RemoteRoot: "${MEGA_REMOTE_ROOT:-Films - Séries - Animés}"
   Ffprobe__CliPath: ffprobe
   Pipeline__HeartbeatPath: /state/worker-heartbeat
+  Telegram__BotToken: "${TELEGRAM_BOT_TOKEN:-}"
+  Telegram__ChatId: "${TELEGRAM_CHAT_ID:-0}"
 
 services:
   db:

@@ -1,0 +1,31 @@
+services:
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${MEDIAHUB_LAN_ADDRESS}:8443:8443"
+    environment:
+      MEDIAHUB_LAN_ADDRESS: "${MEDIAHUB_LAN_ADDRESS}"
+      MEDIAHUB_LAN_ORIGIN: "https://${MEDIAHUB_LAN_ADDRESS}:8443"
+      MEDIAHUB_AUTH_USER: "${MEDIAHUB_AUTH_USER}"
+      MEDIAHUB_AUTH_PASSWORD_HASH: "${MEDIAHUB_AUTH_PASSWORD_HASH}"
+    volumes:
+      - ./Caddyfile.lan:/etc/caddy/Caddyfile:ro
+      - lan_caddy_data:/data
+      - lan_caddy_config:/config
+    networks:
+      - mediahub
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mediahub:
+    external: true
+    name: mediahub_default
+
+volumes:
+  lan_caddy_data:
+  lan_caddy_config:

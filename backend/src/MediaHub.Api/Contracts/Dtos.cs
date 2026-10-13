@@ -6,7 +6,7 @@ namespace MediaHub.Api.Contracts;
 public record MediaSummaryDto(
     Guid Id, int? TmdbId, MediaType Type, string Title, int? Year,
     string? ReleaseDate, string? PosterPath, string? BackdropPath, MediaStatus Status, bool InStock, JobKind? PipelineStage,
-    string? LatestAiredEpisodeDate, int MissingAiredEpisodeCount, string? StorageName = null);
+    string? LatestAiredEpisodeDate, int MissingAiredEpisodeCount, string? StorageName = null, bool WatchActive = false);
 
 public record EpisodeDto(Guid Id, int EpisodeNumber, string? Title, string? AirDate, EpisodeStatus Status, string? CloudPath);
 
@@ -15,7 +15,7 @@ public record SeasonDto(Guid Id, int SeasonNumber, string? Title, IReadOnlyList<
 public record MediaDetailDto(
     Guid Id, int? TmdbId, MediaType Type, string Title, string? OriginalTitle,
     string? Overview, int? Year, string? PosterPath, MediaStatus Status,
-    bool InStock, JobKind? PipelineStage, string? StorageName, IReadOnlyList<SeasonDto> Seasons);
+    bool InStock, JobKind? PipelineStage, string? StorageName, IReadOnlyList<SeasonDto> Seasons, MediaWatchStatus? Watch = null);
 
 public record StockAudioTrackDto(string? Language, string? Codec, string? Channels, int? SampleRate);
 
@@ -51,7 +51,7 @@ public record ReleaseDto(
     string? AudioCodec, string? AudioChannels, string? DynamicRange, int? BitDepth,
     int Grabs, bool Freeleech);
 
-public record ReleaseSearchResponseDto(string Query, IReadOnlyList<ReleaseDto> Releases);
+public record ReleaseSearchResponseDto(string Query, IReadOnlyList<ReleaseDto> Releases, DateTimeOffset? CheckedAt = null);
 
 public record JobDto(
     Guid Id, JobKind Kind, JobStatus Status, double Progress,

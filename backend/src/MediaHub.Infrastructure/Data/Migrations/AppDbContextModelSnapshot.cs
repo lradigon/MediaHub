@@ -136,6 +136,12 @@ namespace MediaHub.Infrastructure.Data.Migrations
                     b.Property<Guid?>("ReleaseProfileId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ReleaseSnapshotJson")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ReleasesCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -152,6 +158,11 @@ namespace MediaHub.Infrastructure.Data.Migrations
 
                     b.Property<int>("Type")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("WatchEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<int?>("Year")
                         .HasColumnType("integer");
@@ -218,6 +229,30 @@ namespace MediaHub.Infrastructure.Data.Migrations
                     b.ToTable("MediaRequests");
                 });
 
+            modelBuilder.Entity("MediaHub.Core.Entities.MediaWatch", b =>
+                {
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("InitializedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("NextCheckAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("MediaItemId");
+
+                    b.HasIndex("NextCheckAt");
+
+                    b.ToTable("MediaWatches");
+                });
+
             modelBuilder.Entity("MediaHub.Core.Entities.PipelineJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -276,6 +311,75 @@ namespace MediaHub.Infrastructure.Data.Migrations
                     b.HasIndex("Status", "CreatedAt");
 
                     b.ToTable("PipelineJobs");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.ReleaseObservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Coverage")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Decision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DownloadUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("NextNotificationAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("NotificationAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId")
+                        .IsUnique();
+
+                    b.HasIndex("Decision", "NextNotificationAt");
+
+                    b.HasIndex("MediaItemId", "Fingerprint")
+                        .IsUnique();
+
+                    b.ToTable("ReleaseObservations");
                 });
 
             modelBuilder.Entity("MediaHub.Core.Entities.ReleaseProfile", b =>
@@ -344,6 +448,152 @@ namespace MediaHub.Infrastructure.Data.Migrations
                     b.ToTable("Seasons");
                 });
 
+            modelBuilder.Entity("MediaHub.Core.Entities.StockFileInspection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DetailsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("InspectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsPresent")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ModifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaItemId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("StockFileInspections");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.StockInspection", b =>
+                {
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CurrentFile")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text");
+
+                    b.Property<int>("FailedFiles")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FileIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Force")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("Generation")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("InspectedFiles")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxFiles")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProcessedFiles")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SelectedFileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TotalFiles")
+                        .HasColumnType("integer");
+
+                    b.HasKey("MediaItemId");
+
+                    b.ToTable("StockInspections");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.TelegramTrackSelection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AudioIndexesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FileJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Heading")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("JobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("MessageId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Page")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SubtitleIndexesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TelegramTrackSelections");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            AudioIndexesJson = "[]",
+                            Page = 0,
+                            SessionId = new Guid("00000000-0000-0000-0000-000000000000"),
+                            SubtitleIndexesJson = "[]"
+                        });
+                });
+
             modelBuilder.Entity("MediaHub.Core.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -370,6 +620,129 @@ namespace MediaHub.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.WatchScan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Manual")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("RetryAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("WatchScans");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.WatchScanItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Filtered")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Found")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("MediaItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("NewProposals")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Observations")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("WatchScanId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WatchScanId", "MediaItemId")
+                        .IsUnique();
+
+                    b.ToTable("WatchScanItems");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.WatchSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("IntervalMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MaxParallelSearches")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("TelegramOffset")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("WatchSettings");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Enabled = false,
+                            IntervalMinutes = 60,
+                            MaxParallelSearches = 3,
+                            TelegramOffset = 0L
+                        });
                 });
 
             modelBuilder.Entity("MediaHub.Core.Entities.Episode", b =>
@@ -418,11 +791,33 @@ namespace MediaHub.Infrastructure.Data.Migrations
                     b.Navigation("RequestedBy");
                 });
 
+            modelBuilder.Entity("MediaHub.Core.Entities.MediaWatch", b =>
+                {
+                    b.HasOne("MediaHub.Core.Entities.MediaItem", "MediaItem")
+                        .WithOne()
+                        .HasForeignKey("MediaHub.Core.Entities.MediaWatch", "MediaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MediaItem");
+                });
+
             modelBuilder.Entity("MediaHub.Core.Entities.PipelineJob", b =>
                 {
                     b.HasOne("MediaHub.Core.Entities.MediaItem", "MediaItem")
                         .WithMany()
                         .HasForeignKey("MediaItemId");
+
+                    b.Navigation("MediaItem");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.ReleaseObservation", b =>
+                {
+                    b.HasOne("MediaHub.Core.Entities.MediaItem", "MediaItem")
+                        .WithMany()
+                        .HasForeignKey("MediaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("MediaItem");
                 });
@@ -436,6 +831,39 @@ namespace MediaHub.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("MediaItem");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.StockFileInspection", b =>
+                {
+                    b.HasOne("MediaHub.Core.Entities.MediaItem", "MediaItem")
+                        .WithMany()
+                        .HasForeignKey("MediaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MediaItem");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.StockInspection", b =>
+                {
+                    b.HasOne("MediaHub.Core.Entities.MediaItem", "MediaItem")
+                        .WithOne()
+                        .HasForeignKey("MediaHub.Core.Entities.StockInspection", "MediaItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MediaItem");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.WatchScanItem", b =>
+                {
+                    b.HasOne("MediaHub.Core.Entities.WatchScan", "WatchScan")
+                        .WithMany("Items")
+                        .HasForeignKey("WatchScanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WatchScan");
                 });
 
             modelBuilder.Entity("MediaHub.Core.Entities.MediaItem", b =>
@@ -453,6 +881,11 @@ namespace MediaHub.Infrastructure.Data.Migrations
             modelBuilder.Entity("MediaHub.Core.Entities.User", b =>
                 {
                     b.Navigation("Requests");
+                });
+
+            modelBuilder.Entity("MediaHub.Core.Entities.WatchScan", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }
